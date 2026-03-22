@@ -1,4 +1,5 @@
 arestless/keycloak/broker/provider/SteamIdentityProvider$Endpoint.class
+arestless/keycloak/broker/provider/SteamIdentityProvider$SteamUser.class
+arestless/keycloak/broker/provider/SteamIdentityProvider.class
 arestless/keycloak/broker/provider/SteamIdentityProviderConfig.class
 arestless/keycloak/broker/provider/SteamIdentityProviderFactory.class
-arestless/keycloak/broker/provider/SteamIdentityProvider.class

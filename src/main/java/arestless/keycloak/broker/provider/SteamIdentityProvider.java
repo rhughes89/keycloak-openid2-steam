@@ -1,6 +1,7 @@
 package arestless.keycloak.broker.provider;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.jboss.logging.Logger;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
 import org.keycloak.broker.provider.AuthenticationRequest;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
@@ -21,6 +22,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class SteamIdentityProvider extends AbstractIdentityProvider<SteamIdentityProviderConfig> implements SocialIdentityProvider<SteamIdentityProviderConfig> {
+
+    private static final Logger LOGGER = Logger.getLogger(SteamIdentityProvider.class);
 
     public SteamIdentityProvider(KeycloakSession session, SteamIdentityProviderConfig config) {
         super(session, config);
@@ -54,6 +57,66 @@ public class SteamIdentityProvider extends AbstractIdentityProvider<SteamIdentit
 
     public Response keycloakInitiatedBrowserLogout(KeycloakSession session, UserSessionModel userSession, UriInfo uriInfo, RealmModel realm) {
         return null;
+    }
+
+    protected class SteamUser {
+        private String steamId;
+        private String userName;
+        private String firstName;
+        private String lastName;
+
+        public SteamUser(String steamId) {
+            this.steamId = steamId;
+            this.userName = "";
+            this.firstName = "";
+            this.lastName = "";
+
+            fetchUserData();
+        }
+        
+        public String getUserName(){
+            return this.userName;
+        }
+
+        public String getFirstName() {
+            return this.firstName;
+        }
+
+        public String getLastName() {
+            return this.lastName;
+        }
+
+        private void fetchUserData() {
+
+            try {
+                LOGGER.infof("Getting User info from Steam for %s", this.steamId);
+                JsonNode node = SimpleHttp.doGet("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/", session)
+                        .param("key", getConfig().getSteamApiKey())
+                        .param("steamids", this.steamId)
+                        .asJson();
+                extractUserData(node);
+            } catch (IOException e) {
+                LOGGER.errorf("Error getting User info from Steam id %s: %s", steamId, e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
+        private void extractUserData (JsonNode node) {
+            LOGGER.infof("Extracting User info from Steam for %s", this.steamId);
+            this.userName = node.get("response").get("players").get(0).get("personaname").asText();
+            String realName = node.get("response").get("players").get(0).get("realname").asText();
+            int lastSpaceIndex = realName.lastIndexOf(' ');
+
+            if (lastSpaceIndex != -1) {
+                this.firstName = realName.substring(0, lastSpaceIndex); 
+                this.lastName = realName.substring(lastSpaceIndex + 1); 
+            } else {
+                // Handle cases with no space (e.g., single name)
+                this.firstName = realName;
+                this.lastName = "";
+            }
+        }
+
     }
 
     protected class Endpoint {
@@ -119,6 +182,7 @@ public class SteamIdentityProvider extends AbstractIdentityProvider<SteamIdentit
 
             Pattern p = Pattern.compile("https?://steamcommunity.com/openid/id/([0-9]{17,25})");
             Matcher matcher = p.matcher(identity);
+
             String steamId;
             if (matcher.matches()) {
                 steamId = matcher.group(1);
@@ -126,25 +190,17 @@ public class SteamIdentityProvider extends AbstractIdentityProvider<SteamIdentit
                 return callback.error(Messages.IDENTITY_PROVIDER_UNEXPECTED_ERROR);
             }
 
+            SteamUser user = new SteamUser(steamId);
             BrokeredIdentityContext federatedIdentity = new BrokeredIdentityContext(claimedId);
+
             federatedIdentity.setIdp(SteamIdentityProvider.this);
             federatedIdentity.setIdpConfig(getConfig());
             federatedIdentity.setBrokerUserId(steamId);
-            federatedIdentity.setUsername(steamId);
+            federatedIdentity.setUsername(user.getUserName());
+            federatedIdentity.setFirstName(user.getFirstName());
+            federatedIdentity.setLastName(user.getLastName());
             federatedIdentity.setAuthenticationSession(authSession);
             federatedIdentity.setUserAttribute("steamId", steamId);
-
-            try {
-                JsonNode node = SimpleHttp.doGet("https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v0002/", session)
-                        .param("key", getConfig().getSteamApiKey())
-                        .param("steamids", steamId)
-                        .asJson();
-
-                federatedIdentity.setUsername(node.get("response").get("players").get(0).get("personaname").asText());
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
 
             return callback.authenticated(federatedIdentity);
         }
