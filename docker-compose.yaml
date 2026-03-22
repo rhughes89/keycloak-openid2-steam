@@ -1,0 +1,15 @@
+services:
+  local-dev-keycloak:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: local-dev-keycloak
+    ports:
+      - "8080:8080"
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      # The extension reads this from the environment
+      - STEAM_API_KEY=${STEAM_API_KEY}
+    env_file:
+      - .env
